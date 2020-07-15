@@ -41,7 +41,7 @@ function bytesToString(bytes) {
  * @arg {Blob} blob.
  * @returns {ArrayBuffer} in callback function.
  */
-function blobToArrayBuffer(blob, callback) {
+function toArrayBuffer(blob, callback) {
   var reader = new FileReader();
   reader.onload = function() {
     callback(null, reader.result); 
@@ -58,9 +58,9 @@ function blobToArrayBuffer(blob, callback) {
  */
 function ensureArrayBuffer(data, callback) {
   if (data instanceof Blob) {
-    blobToArrayBuffer(data, callback);
+    toArrayBuffer(data, callback);
   } else {
-    callback(null, data);
+    return callback(null, data);
   }
 }
 
@@ -73,7 +73,7 @@ function ensureArrayBuffer(data, callback) {
  * @returns {Object} atom info in callback
  */
 function consumeAtomHeader(data, start, end, callback) {
-  ensureArrayBuffer(data.slice(start, start + 16), function (err, buff) {
+  return ensureArrayBuffer(data.slice(start, start + 16), function (err, buff) {
 
     if (err) {
       return callback(err);
@@ -84,6 +84,14 @@ function consumeAtomHeader(data, start, end, callback) {
       size: bytesToNumber(buff.slice(0, 4)),
       type: bytesToString(buff.slice(4, 8))
     };
+
+    if (atom.type.length !== 4) {
+      return callback('Invalid Atom Type');
+    }
+
+    if (Number.isNaN(atom.size)) {
+      return callback('Invalid Atom Size');
+    }
 
     if (atom.size === 0) {
 
@@ -102,7 +110,7 @@ function consumeAtomHeader(data, start, end, callback) {
       return callback('Invalid Atom Header');
     }
 
-    callback(null, atom);
+    return callback(null, atom);
 
   });
 }
@@ -116,11 +124,11 @@ function consumeAtomHeader(data, start, end, callback) {
  * @returns {Object} atom info in callback
  */
 function consumeMvhd(data, start, end, callback) {
-  ensureArrayBuffer(data.slice(start, start + 26), function (err, buff) {
+  return ensureArrayBuffer(data.slice(start, start + 26), function (err, buff) {
     if (err) {
-      callback(err);
+      return callback(err);
     } else {
-      callback(null, {
+      return callback(null, {
         //version: bytesToNumber(buff.slice(0, 1)),
         //flags: bytesToNumber(buff.slice(1, 4)),
         creationTime: bytesToNumber(buff.slice(4, 8)),
@@ -143,11 +151,11 @@ function consumeMvhd(data, start, end, callback) {
  * @returns {Object} atom info in callback
  */
 function consumeHdlr(data, start, end, callback) {
-  ensureArrayBuffer(data.slice(start, end), function (err, buff) {
+  return ensureArrayBuffer(data.slice(start, end), function (err, buff) {
     if (err) {
-      callback(err);
+      return callback(err);
     } else {
-      callback(null, {
+      return callback(null, {
         //version: bytesToNumber(buff.slice(0, 1)),
         //flags: bytesToNumber(buff.slice(1, 4)),
         type: bytesToString(buff.slice(4, 8)),
@@ -167,11 +175,11 @@ function consumeHdlr(data, start, end, callback) {
  * @returns {Object} atom info in callback
  */
 function consumeMdhd(data, start, end, callback) {
-  ensureArrayBuffer(data.slice(start, start + 22), function (err, buff) {
+  return ensureArrayBuffer(data.slice(start, start + 22), function (err, buff) {
     if (err) {
-      callback(err);
+      return callback(err);
     } else {
-      callback(null, {
+      return callback(null, {
         //version: bytesToNumber(buff.slice(0, 1)),
         //flags: bytesToNumber(buff.slice(1, 4)),
         creationTime: bytesToNumber(buff.slice(4, 8)),
@@ -193,11 +201,11 @@ function consumeMdhd(data, start, end, callback) {
  * @returns {Object} atom info in callback
  */
 function consumeStsd(data, start, end, callback) {
-  ensureArrayBuffer(data.slice(start, start + 48), function (err, buff) {
+  return ensureArrayBuffer(data.slice(start, start + 48), function (err, buff) {
     if (err) {
-      callback(err);
+      return callback(err);
     } else {
-      callback(null, {
+      return callback(null, {
         //version: bytesToNumber(buff.slice(0, 1)),
         //flags: bytesToNumber(buff.slice(1, 4)),
         //
@@ -223,11 +231,11 @@ function consumeStsd(data, start, end, callback) {
  * @returns {Object} atom info in callback
  */
 function consumeStsz(data, start, end, callback) {
-  ensureArrayBuffer(data.slice(start, start + 12), function (err, buff) {
+  return ensureArrayBuffer(data.slice(start, start + 12), function (err, buff) {
     if (err) {
-      callback(err);
+      return callback(err);
     } else {
-      callback(null, {
+      return callback(null, {
         //version: bytesToNumber(buff.slice(0, 1)),
         //flags: bytesToNumber(buff.slice(1, 4)),
         sampleSize: bytesToNumber(buff.slice(4, 8)),
@@ -239,6 +247,8 @@ function consumeStsz(data, start, end, callback) {
 
 /**
  * Consumes Atoms from the provided data.
+ * NOTE: Callbacks always come with 'return' in case we're doing
+ * the synchronous version.
  *
  * @arg {ArrayBuffer | Blob} data.
  * @arg {Number} start - slice start.
@@ -256,7 +266,7 @@ function consumeAtoms(data, start, end, callback) {
       return callback(null, atoms);
     }
 
-    consumeAtomHeader(data, n, end, function (err, atom) {
+    return consumeAtomHeader(data, n, end, function (err, atom) {
 
       if (err) {
         return callback(err);
@@ -278,12 +288,12 @@ function consumeAtoms(data, start, end, callback) {
         case 'minf':
         case 'dinf':
         case 'stbl':
-          consumeAtoms(data, atomStart, atomEnd, function (err, arr) {
+          return consumeAtoms(data, atomStart, atomEnd, function (err, arr) {
             if (err) {
-              callback(err);
+              return callback(err);
             } else {
               atom.atoms = arr;
-              next();
+              return next();
             }
           });
           break;
@@ -291,95 +301,211 @@ function consumeAtoms(data, start, end, callback) {
         // Atoms that contain data.
 
         case 'mvhd':
-          consumeMvhd(data, atomStart, atomEnd, function (err, data) {
+          return consumeMvhd(data, atomStart, atomEnd, function (err, data) {
             if (err) {
-              callback(err);
+              return callback(err);
             } else {
               atom.data = data;
-              next();
+              return next();
             }
           });
           break;
 
         case 'hdlr':
-          consumeHdlr(data, atomStart, atomEnd, function (err, data) {
+          return consumeHdlr(data, atomStart, atomEnd, function (err, data) {
             if (err) {
-              callback(err);
+              return callback(err);
             } else {
               atom.data = data;
-              next();
+              return next();
             }
           });
           break;
 
         case 'mdhd':
-          consumeMdhd(data, atomStart, atomEnd, function (err, data) {
+          return consumeMdhd(data, atomStart, atomEnd, function (err, data) {
             if (err) {
-              callback(err);
+              return callback(err);
             } else {
               atom.data = data;
-              next();
+              return next();
             }
           });
           break;
 
         case 'stsd':
-          consumeStsd(data, atomStart, atomEnd, function (err, data) {
+          return consumeStsd(data, atomStart, atomEnd, function (err, data) {
             if (err) {
-              callback(err);
+              return callback(err);
             } else {
               atom.data = data;
-              next();
+              return next();
             }
           });
           break;
 
         case 'stsz':
-          consumeStsz(data, atomStart, atomEnd, function (err, data) {
+          return consumeStsz(data, atomStart, atomEnd, function (err, data) {
             if (err) {
-              callback(err);
+              return callback(err);
             } else {
               atom.data = data;
-              next();
+              return next();
             }
           });
           break;
 
         default:
-          next();
+          return next();
           break;
       }
     });
   }
 
-  next();
+  return next();
+}
+
+/**
+ * Helper to get the first appearance of an atom type in an atom.
+ */
+function forAtoms(atoms, type, callback) {
+  if (atoms) {
+    atoms
+      .filter(function (atom) { return atom.type === type; })
+      .forEach(function (atom) { callback(atom); });
+  }
+}
+
+/**
+ * Gets metadata for given video atoms.
+ *
+ * @args {Array} atoms - Array of atoms.
+ * @returns {Object} video properties.
+ */
+function getMp4InfoFromAtoms(atoms) {
+
+  var result = {};
+
+  forAtoms(atoms, 'moov', function(atom) {
+
+    forAtoms(atom.atoms, 'mvhd', function(atom) {
+      result.duration = atom.data.duration / atom.data.timeScale;
+    });
+
+    forAtoms(atom.atoms, 'trak', function(atom) {
+      forAtoms(atom.atoms, 'mdia', function(atom) {
+
+        // If is track is a video track, we use the data here
+        // for the overall metadata.
+        var subtype;
+        forAtoms(atom.atoms, 'hdlr', function(atom) {
+          subtype = atom.data.subtype;
+        });
+        if (subtype !== 'vide') {
+          return;
+        }
+
+        var timeScale;
+        var duration;
+        var sampleCount;
+        var width;
+        var height;
+        var resolution;
+
+        forAtoms(atom.atoms, 'mdhd', function(atom) {
+          timeScale = atom.data.timeScale;
+          duration = atom.data.duration;
+        });
+
+        forAtoms(atom.atoms, 'minf', function(atom) {
+          forAtoms(atom.atoms, 'stbl', function(atom) {
+
+            forAtoms(atom.atoms, 'stsd', function(atom) {
+              width = atom.data.width;
+              height = atom.data.height;
+              resolution = atom.data.resolution;
+            });
+
+            forAtoms(atom.atoms, 'stsz', function(atom) {
+              sampleCount = atom.data.sampleCount;
+            });
+
+          });
+        });
+
+        if (width) {
+          result.width = width;
+        }
+        if (height) {
+          result.height = height;
+        }
+        if (resolution) {
+          result.resolution = resolution;
+        }
+        if (sampleCount && timeScale && duration) {
+          result.frameRate = (sampleCount * timeScale) / duration;
+        }
+      
+      });
+    });
+
+  });
+
+  return result;
 }
 
 /**
  * Gets metadata for a given video file (mp4 or mov).
  *
+ * NOTE: If 'file' is not a Blob, this function can be used synchronously.
+ *
  * @args {Blob|ArrayBuffer|Array} file - video file data.
  * @returns {Object} video properties in callback.
  */
 function getMp4Info(file, callback) {
+  callback = callback || function (err, res) {
+    if (err) {
+      throw new Error(err);
+    } else {
+      return res;
+    }
+  };
+  if (typeof callback !== 'function') {
+    throw new Error('Callback must be a function');
+  }
 
   if (!file) {
-    callback('File is required');
+    return callback('File is required');
   }
 
-  if (!(file instanceof Blob)) {
-    throw new Error('"file" must be a Blob');
+  var size = 0;
+
+  if (file instanceof Blob) {
+    size = file.size;
+  } else if (file instanceof ArrayBuffer) {
+    size = file.byteLength;
+  } else if (ArrayBuffer.isView(file)) {
+    if (file instanceof Uint8Array) {
+      size = file.length;
+    } else {
+      file = new Uint8Array(file);
+      size = file.length;
+    }
+  } else if (Array.isArray(file)) {
+    size = file.length;
+  } else {
+    return callback('"file" must be one of: Blob, ArrayBuffer, Array');
   }
 
-  consumeAtoms(file, 0, file.size, function (err, atoms) {
+  return consumeAtoms(file, 0, size, function (err, atoms) {
 
     if (err) {
       return callback(err);
     }
 
-    // TODO: Traverse the atoms here.
+    var result = getMp4InfoFromAtoms(atoms);
 
-    callback(null, atoms);
+    return callback(null, result);
 
   });
 }

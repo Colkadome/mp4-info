@@ -11,8 +11,9 @@
 
       var file = event.target.files[0];
 
+      // Async test.
       getMp4Info(file, function (err, result) {
-        printAtoms(result);
+        console.log(result);
       });
     }
   });
