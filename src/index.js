@@ -46,6 +46,10 @@ function toArrayBuffer(blob, callback) {
   reader.onload = function() {
     callback(null, reader.result); 
   };
+  reader.onerror = function () {
+    callback(new Error('Failed to read file'));
+    reader.abort();
+  };
   reader.readAsArrayBuffer(blob);
 }
 
@@ -68,8 +72,8 @@ function ensureArrayBuffer(data, callback) {
  * Consumes Atom header.
  *
  * @arg {ArrayBuffer | Blob} data.
- * @arg {Number} start - start position of atom header.
- * @arg {Number} end - end position of atom(s).
+ * @arg {Number} start - start position of atom group.
+ * @arg {Number} end - end position of atom group.
  * @returns {Object} atom info in callback
  */
 function consumeAtomHeader(data, start, end, callback) {
@@ -86,11 +90,12 @@ function consumeAtomHeader(data, start, end, callback) {
     };
 
     if (atom.type.length !== 4) {
-      return callback('Invalid Atom Type');
+      return callback(new Error('Invalid Atom Type'));
     }
 
+    // Sanity check.
     if (Number.isNaN(atom.size)) {
-      return callback('Invalid Atom Size');
+      return callback(new Error('Invalid Atom Size'));
     }
 
     if (atom.size === 0) {
@@ -107,7 +112,12 @@ function consumeAtomHeader(data, start, end, callback) {
 
     // Atoms must be at least the size of the header.
     if (atom.size < headerSize) {
-      return callback('Invalid Atom Header');
+      return callback(new Error('Invalid Atom Size'));
+    }
+
+    // Atom can't be larger than the total size.
+    if (atom.size > end - start) {
+      return callback(new Error('Invalid Atom Size'));
     }
 
     return callback(null, atom);
@@ -215,8 +225,8 @@ function consumeStsd(data, start, end, callback) {
         //
         width: bytesToNumber(buff.slice(40, 42)),
         height: bytesToNumber(buff.slice(42, 44)),
-        xResolution: bytesToNumber(buff.slice(44, 46)),
-        yResolution: bytesToNumber(buff.slice(46, 48)),
+        resolution: bytesToNumber(buff.slice(44, 46)),
+        //yResolution: bytesToNumber(buff.slice(46, 48)),
       });
     }
   });
@@ -280,7 +290,7 @@ function consumeAtoms(data, start, end, callback) {
 
       switch (atom.type) {
 
-        // Atoms that contain atoms.
+        // Atoms that contain more atoms.
 
         case 'moov':
         case 'trak':
@@ -299,6 +309,7 @@ function consumeAtoms(data, start, end, callback) {
           break;
 
         // Atoms that contain data.
+        // NOTE: There are probably lots more that could be checked for here.
 
         case 'mvhd':
           return consumeMvhd(data, atomStart, atomEnd, function (err, data) {
@@ -366,7 +377,7 @@ function consumeAtoms(data, start, end, callback) {
 }
 
 /**
- * Helper to get the first appearance of an atom type in an atom.
+ * Short-hand for accessing atoms of a certain type.
  */
 function forAtoms(atoms, type, callback) {
   if (atoms) {
@@ -465,7 +476,7 @@ function getMp4InfoFromAtoms(atoms) {
 function getMp4Info(file, callback) {
   callback = callback || function (err, res) {
     if (err) {
-      throw new Error(err);
+      throw err;
     } else {
       return res;
     }
@@ -475,7 +486,7 @@ function getMp4Info(file, callback) {
   }
 
   if (!file) {
-    return callback('File is required');
+    return callback(new Error('File is required'));
   }
 
   var size = 0;
@@ -494,7 +505,7 @@ function getMp4Info(file, callback) {
   } else if (Array.isArray(file)) {
     size = file.length;
   } else {
-    return callback('"file" must be one of: Blob, ArrayBuffer, Array');
+    return callback(new Error('"file" must be one of: Blob, ArrayBuffer, Array'));
   }
 
   return consumeAtoms(file, 0, size, function (err, atoms) {
@@ -504,36 +515,9 @@ function getMp4Info(file, callback) {
     }
 
     var result = getMp4InfoFromAtoms(atoms);
+    result.atoms = atoms;
 
     return callback(null, result);
 
   });
-}
-
-/**
- * Prints the MP4 data nicely.
- *
- * @args {Array} atoms - atoms to print.
- */
-function printAtoms(atoms, prefix) {
-  prefix = prefix || '';
-
-  for (var i = 0; i < atoms.length; i++) {
-    var atom = atoms[i];
-
-    // Print type.
-    console.log(prefix + atom.type);
-
-    // Print data.
-    if (atom.data) {
-      for (var key in atom.data) {
-        console.log(prefix + ' | ' + key + ': ' + atom.data[key]);
-      }
-    }
-
-    // Print child atoms.
-    if (atom.atoms) {
-      printAtoms(atom.atoms, prefix + ' | ');
-    }
-  }
 }
